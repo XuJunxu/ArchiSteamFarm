@@ -32,7 +32,7 @@ internal static class Events {
 			return;
 		}
 
-		ASF.ArchiLogger.LogGenericInfo(Strings.NoBotsAreRunning);
+		// ASF.ArchiLogger.LogGenericInfo(Strings.NoBotsAreRunning);
 
 		// We give user extra 5 seconds for eventual config changes
 		await Task.Delay(5000).ConfigureAwait(false);
@@ -41,6 +41,6 @@ internal static class Events {
 			return;
 		}
 
-		await Program.Exit().ConfigureAwait(false);
+		// await Program.Exit().ConfigureAwait(false);
 	}
 }
