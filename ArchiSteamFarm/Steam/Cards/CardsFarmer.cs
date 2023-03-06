@@ -1027,7 +1027,15 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 
 		bool success = true;
 
-		foreach (Game game in games) {
+		List<Game> gamesToSolo = new();
+
+		foreach (uint appID in Bot.BotConfig.GamesFastSoloAdd) {
+			gamesToSolo.Add(new Game(appID, appID.ToString(CultureInfo.CurrentCulture), 0, 1, 0, 2, DateTime.UtcNow));
+		}
+
+		gamesToSolo.AddRange(games);
+
+		foreach (Game game in gamesToSolo) {
 			CurrentGamesFarming.Add(game);
 
 			if (game.AppID != game.PlayableAppID) {

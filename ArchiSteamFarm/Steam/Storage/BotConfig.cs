@@ -146,6 +146,16 @@ public sealed class BotConfig {
 	[PublicAPI]
 	public static readonly ImmutableHashSet<Asset.EType> DefaultTransferableTypes = ImmutableHashSet.Create(Asset.EType.BoosterPack, Asset.EType.FoilTradingCard, Asset.EType.TradingCard);
 
+	// 快速挂卡中单独挂卡时额外添加的游戏，当只有一个可挂卡游戏时添加两个额外的游戏可加速挂卡
+	[PublicAPI]
+	public static readonly ImmutableList<uint> DefaultGamesFastSoloAdd = ImmutableList<uint>.Empty;
+
+	[JsonProperty(Required = Required.DisallowNull)]
+	[MaxLength(ArchiHandler.MaxGamesPlayedConcurrently)]
+	[SwaggerItemsMinMax(MinimumUint = 1, MaximumUint = uint.MaxValue)]
+	[UnconditionalSuppressMessage("AssemblyLoadTrimming", "IL2026:RequiresUnreferencedCode", Justification = "This is optional, supportive attribute, we don't care if it gets trimmed or not")]
+	public ImmutableList<uint> GamesFastSoloAdd { get; private set; } = DefaultGamesFastSoloAdd;
+
 	[JsonProperty(Required = Required.DisallowNull)]
 	public bool AcceptGifts { get; private set; } = DefaultAcceptGifts;
 
@@ -314,6 +324,9 @@ public sealed class BotConfig {
 
 	[JsonConstructor]
 	internal BotConfig() { }
+
+	[UsedImplicitly]
+	public bool ShouldSerializeGamesFastSoloAdd() => !Saving || ((GamesFastSoloAdd != DefaultGamesFastSoloAdd) && !GamesFastSoloAdd.SequenceEqual(DefaultGamesFastSoloAdd));
 
 	[UsedImplicitly]
 	public bool ShouldSerializeAcceptGifts() => !Saving || (AcceptGifts != DefaultAcceptGifts);
