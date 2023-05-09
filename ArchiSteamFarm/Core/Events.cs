@@ -28,6 +28,10 @@ namespace ArchiSteamFarm.Core;
 
 internal static class Events {
 	internal static async Task OnBotShutdown() {
+		if (ASF.GlobalConfig?.NoBotsKeepRunning ?? Storage.GlobalConfig.DefaultNoBotsKeepRunning) {
+			return;
+		}
+
 		if (Program.ProcessRequired || ((Bot.Bots != null) && Bot.Bots.Values.Any(static bot => bot.KeepRunning))) {
 			return;
 		}
