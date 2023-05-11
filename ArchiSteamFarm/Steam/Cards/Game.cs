@@ -41,9 +41,11 @@ public sealed class Game : IEquatable<Game> {
 
 	internal uint PlayableAppID { get; set; }
 
-	internal ushort CardsTotal { get; }
+	[JsonProperty]
+	public ushort CardsTotal { get; }
 
-	internal DateTime LastTime { get; set; }
+	[JsonProperty]
+	public DateTime LastTime { get; set; }
 
 	internal bool CheckPlayable { get; set; }
 

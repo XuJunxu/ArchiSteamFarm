@@ -537,40 +537,6 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 			if (ignored) {
 				continue;
 			}
-			// Total Cards
-			INode? progressInfo = htmlNode?.SelectSingleNode(".//div[@class='badge_progress_info']");
-
-			if (progressInfo == null) {
-				Bot.ArchiLogger.LogNullError(progressInfo);
-
-				continue;
-			}
-
-			string totalCardsText = progressInfo.TextContent;
-
-			if (string.IsNullOrEmpty(totalCardsText)) {
-				Bot.ArchiLogger.LogNullError(totalCardsText);
-
-				continue;
-			}
-
-			string[] totalCardsSplitted = totalCardsText!.Trim().Split(' ');
-
-			if (totalCardsSplitted.Length < 3) {
-				Bot.ArchiLogger.LogNullError(totalCardsSplitted);
-
-				continue;
-			}
-
-			totalCardsText = totalCardsSplitted[2];
-
-			ushort totalCards = 0;
-
-			if (!ushort.TryParse(totalCardsText, out totalCards) || (totalCards == 0)) {
-				Bot.ArchiLogger.LogNullError(totalCards);
-
-				continue;
-			}
 
 			// Cards
 			INode? progressNode = statsNode?.SelectSingleNode(".//span[@class='progress_info_bold']");
@@ -780,6 +746,25 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 					Bot.ArchiLogger.LogNullError(badgeLevel);
 
 					continue;
+				}
+			}
+
+			// Total Cards
+			ushort totalCards = 0;
+
+			INode? progressInfo = htmlNode?.SelectSingleNode(".//div[@class='badge_progress_info']");
+
+			if (progressInfo != null) {
+				string totalCardsText = progressInfo.TextContent;
+
+				if (!string.IsNullOrEmpty(totalCardsText)) {
+					string[] totalCardsSplitted = totalCardsText!.Trim().Split(' ');
+
+					if (totalCardsSplitted.Length >= 3) {
+						if (!ushort.TryParse(totalCardsSplitted[2], out totalCards)) {
+							totalCards = 0;
+						}
+					}
 				}
 			}
 
