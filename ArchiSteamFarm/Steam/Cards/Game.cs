@@ -41,7 +41,15 @@ public sealed class Game : IEquatable<Game> {
 
 	internal uint PlayableAppID { get; set; }
 
-	internal Game(uint appID, string gameName, float hoursPlayed, ushort cardsRemaining, byte badgeLevel) {
+	[JsonProperty]
+	public ushort CardsTotal { get; }
+
+	[JsonProperty]
+	public DateTime LastTime { get; set; }
+
+	internal bool CheckPlayable { get; set; }
+
+	internal Game(uint appID, string gameName, float hoursPlayed, ushort cardsRemaining, byte badgeLevel, ushort cardsTotal, DateTime lastTime, bool checkPlayable = false) {
 		AppID = appID > 0 ? appID : throw new ArgumentOutOfRangeException(nameof(appID));
 		GameName = !string.IsNullOrEmpty(gameName) ? gameName : throw new ArgumentNullException(nameof(gameName));
 		HoursPlayed = hoursPlayed >= 0 ? hoursPlayed : throw new ArgumentOutOfRangeException(nameof(hoursPlayed));
@@ -49,6 +57,12 @@ public sealed class Game : IEquatable<Game> {
 		BadgeLevel = badgeLevel;
 
 		PlayableAppID = appID;
+
+		CheckPlayable = checkPlayable;
+
+		CardsTotal = cardsTotal;
+
+		LastTime = lastTime;
 	}
 
 	public bool Equals(Game? other) => (other != null) && (ReferenceEquals(other, this) || ((AppID == other.AppID) && (BadgeLevel == other.BadgeLevel) && (GameName == other.GameName)));
