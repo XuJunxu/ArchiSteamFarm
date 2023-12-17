@@ -126,6 +126,8 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 	private readonly ConcurrentList<Game> GamesToFarm = [];
 	private readonly Timer? IdleFarmingTimer;
 
+	private readonly ConcurrentList<Game> GamesToFarmTemp = [];
+
 	private readonly ConcurrentDictionary<uint, DateTime> LocallyIgnoredAppIDs = new();
 
 	private IEnumerable<ConcurrentDictionary<uint, DateTime>> SourcesOfIgnoredAppIDs {
@@ -139,9 +141,15 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 	[PublicAPI]
 	public bool Paused { get; private set; }
 
+	[JsonProperty]
 	internal bool NowFarming { get; private set; }
 
+	[JsonProperty]
 	private bool KeepFarming;
+
+	[JsonProperty]
+	public bool CanNotGetBadgePage { get; private set; }
+
 	private bool ParsingScheduled;
 	private bool PermanentlyPaused;
 	private bool ShouldResumeFarming;
@@ -305,12 +313,15 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 	internal void SetInitialState(bool paused) {
 		PermanentlyPaused = Paused = paused;
 		ShouldResumeFarming = ShouldSkipNewGamesIfPossible = false;
+		CanNotGetBadgePage = false;
 	}
 
 	internal async Task StartFarming() {
 		if (NowFarming || Paused || !Bot.IsPlayingPossible) {
 			return;
 		}
+
+		CanNotGetBadgePage = false;
 
 		if (!Bot.CanReceiveSteamCards || (Bot.BotConfig.FarmPriorityQueueOnly && (Bot.BotDatabase.FarmingPriorityQueueAppIDs.Count == 0))) {
 			Bot.ArchiLogger.LogGenericInfo(Strings.NothingToIdle);
@@ -417,7 +428,7 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 		}
 	}
 
-	private async Task CheckGame(uint appID, string name, float hours, byte badgeLevel) {
+	private async Task CheckGame(uint appID, string name, float hours, byte badgeLevel, ushort totalCards, DateTime now, bool checkPlayable) {
 		ArgumentOutOfRangeException.ThrowIfZero(appID);
 		ArgumentException.ThrowIfNullOrEmpty(name);
 		ArgumentOutOfRangeException.ThrowIfNegative(hours);
@@ -433,7 +444,7 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 		if (game.CardsRemaining > 0) {
 			Bot.BotDatabase.FarmingRiskyPrioritizedAppIDs.Add(appID);
 
-			GamesToFarm.Add(new Game(appID, name, hours, game.CardsRemaining, badgeLevel));
+			GamesToFarm.Add(new Game(appID, name, hours, game.CardsRemaining, badgeLevel, totalCards, now, checkPlayable));
 		}
 	}
 
@@ -707,15 +718,43 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 				}
 			}
 
+			// Total Cards
+			ushort totalCards = 0;
+
+			INode? progressInfo = htmlNode?.SelectSingleNode(".//div[@class='badge_progress_info']");
+
+			if (progressInfo != null) {
+				string totalCardsText = progressInfo.TextContent;
+
+				if (!string.IsNullOrEmpty(totalCardsText)) {
+					string[] totalCardsSplitted = totalCardsText!.Trim().Split(' ');
+
+					if (totalCardsSplitted.Length >= 3) {
+						if (!ushort.TryParse(totalCardsSplitted[2], out totalCards)) {
+							totalCards = 0;
+						}
+					}
+				}
+			}
+
+			DateTime now = DateTime.UtcNow;
+			bool checkPlayable = false;
+
+			Game? gm = GamesToFarmTemp?.FirstOrDefault(game => game.AppID == appID);
+			if (gm != null) {
+				now = gm.LastTime;
+				checkPlayable = gm.CheckPlayable;
+			}
+
 			// Done with parsing, we have two possible cases here
 			// Either we have decent info about appID, name, hours, cardsRemaining (cardsRemaining > 0) and level
 			// OR we strongly believe that Steam lied to us, in this case we will need to check game individually (cardsRemaining == 0)
 			if (cardsRemaining > 0) {
 				Bot.BotDatabase.FarmingRiskyPrioritizedAppIDs.Add(appID);
 
-				GamesToFarm.Add(new Game(appID, name, hours, cardsRemaining, badgeLevel));
+				GamesToFarm.Add(new Game(appID, name, hours, cardsRemaining, badgeLevel, totalCards, now, checkPlayable));
 			} else {
-				Task task = CheckGame(appID, name, hours, badgeLevel);
+				Task task = CheckGame(appID, name, hours, badgeLevel, totalCards, now, checkPlayable);
 
 				switch (ASF.GlobalConfig?.OptimizationMode) {
 					case GlobalConfig.EOptimizationMode.MinMemoryUsage:
@@ -745,6 +784,7 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 		using IDocument? htmlDocument = await Bot.ArchiWebHandler.GetBadgePage(page).ConfigureAwait(false);
 
 		if (htmlDocument == null) {
+			CanNotGetBadgePage = true;
 			return false;
 		}
 
@@ -755,10 +795,40 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 
 	private async Task Farm() {
 		do {
-			Bot.ArchiLogger.LogGenericInfo(string.Format(CultureInfo.CurrentCulture, Strings.GamesToIdle, GamesToFarm.Count, GamesToFarm.Sum(static game => game.CardsRemaining), TimeRemaining.ToHumanReadable()));
+			Bot.ArchiLogger.LogGenericInfo(string.Format(CultureInfo.CurrentCulture, Strings.GamesToIdle, GamesToFarm.Count, GamesToFarm.Sum(static game => game.CardsRemaining), string.Empty));
 
 			// Now the algorithm used for farming depends on whether account is restricted or not
-			if (Bot.BotConfig.HoursUntilCardDrops > 0) {
+			if (ASF.GlobalConfig?.FarmFastMode ?? GlobalConfig.DefaultFarmFastMode) {
+				Bot.ArchiLogger.LogGenericInfo(string.Format(CultureInfo.CurrentCulture, Strings.ChosenFarmingAlgorithm, "Fast"));
+				HashSet<Game> innerGamesToFarm = new();
+
+				foreach (Game game in GamesToFarm.OrderByDescending(static game => game.HoursPlayed).ToList()) {
+					if (!game.CheckPlayable && !await IsPlayableGame(game).ConfigureAwait(false)) {
+						GamesToFarm.Remove(game);
+
+						continue;
+					}
+
+					innerGamesToFarm.Add(game);
+
+					// There is no need to check all games at once, allow maximum of MaxGamesPlayedConcurrently in this batch
+					if (innerGamesToFarm.Count >= ArchiHandler.MaxGamesPlayedConcurrently) {
+						break;
+					}
+				}
+
+				// If we have no playable games to farm, we're done
+				if (innerGamesToFarm.Count == 0) {
+					break;
+				}
+
+				if (!await FarmFast(innerGamesToFarm).ConfigureAwait(false)) {
+					NowFarming = false;
+
+					return;
+				}
+
+			} else if (Bot.BotConfig.HoursUntilCardDrops > 0) {
 				// If we have restricted card drops, we use complex algorithm
 				Bot.ArchiLogger.LogGenericInfo(string.Format(CultureInfo.CurrentCulture, Strings.ChosenFarmingAlgorithm, "Complex"));
 
@@ -850,6 +920,139 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 
 		Bot.ArchiLogger.LogGenericInfo(Strings.IdlingFinished);
 		await Bot.OnFarmingFinished(true).ConfigureAwait(false);
+	}
+
+	private async Task<bool> FarmFastMultiple(IReadOnlyCollection<Game> games) {
+		if ((games == null) || (games.Count == 0)) {
+			throw new ArgumentNullException(nameof(games));
+		}
+
+		float maxHour = games.Max(static game => game.HoursPlayed);
+
+		if (maxHour < 0) {
+			Bot.ArchiLogger.LogNullError(maxHour);
+
+			return false;
+		}
+
+		Bot.ArchiLogger.LogGenericInfo(string.Format(CultureInfo.CurrentCulture, Strings.NowIdlingList, string.Join(", ", games.Select(static game => $"{game.AppID}-{game.CardsRemaining}-{game.HoursPlayed:F2}"))));
+
+		CurrentGamesFarming.ReplaceWith(games);
+
+		await Bot.IdleGames(games).ConfigureAwait(false);
+
+		bool success = true;
+
+		DateTime startFarmingPeriod = DateTime.UtcNow;
+
+		if (await FarmingResetSemaphore.WaitAsync((ASF.GlobalConfig?.FarmFastMultipleDelay ?? GlobalConfig.DefaultFarmFastMultipleDelay) * 60 * 1000).ConfigureAwait(false)) {
+			success = KeepFarming;
+		}
+
+		// Don't forget to update our GamesToFarm hours
+		float timePlayed = (float) DateTime.UtcNow.Subtract(startFarmingPeriod).TotalHours;
+
+		foreach (Game game in games) {
+			game.HoursPlayed += timePlayed;
+		}
+
+		await Bot.ArchiHandler.PlayGames(Array.Empty<uint>()).ConfigureAwait(false);
+
+		CurrentGamesFarming.Clear();
+
+		Bot.ArchiLogger.LogGenericInfo(string.Format(CultureInfo.CurrentCulture, Strings.StoppedIdlingList, string.Join(", ", games.Select(static game => game.AppID))));
+
+		if (success) {
+			if (await FarmingResetSemaphore.WaitAsync(5 * 1000).ConfigureAwait(false)) {
+				success = KeepFarming;
+			}
+		}
+
+		return success;
+	}
+
+	private async Task<bool> FarmFastSolo(IReadOnlyCollection<Game> games) {
+		if ((games == null) || (games.Count == 0)) {
+			return true;
+		}
+
+		Bot.ArchiLogger.LogGenericInfo(string.Format(CultureInfo.CurrentCulture, Strings.NowIdlingList, string.Join(", ", games.Select(static game => $"{game.AppID}-{game.CardsRemaining}-{game.HoursPlayed:F2}"))));
+
+		bool success = true;
+
+		List<Game> gamesToSolo = new();
+
+		foreach (uint appID in Bot.BotConfig.GamesFastSoloAdd) {
+			gamesToSolo.Add(new Game(appID, appID.ToString(CultureInfo.CurrentCulture), 0, 1, 0, 2, DateTime.UtcNow));
+		}
+
+		gamesToSolo.AddRange(games);
+
+		foreach (Game game in gamesToSolo) {
+			CurrentGamesFarming.Add(game);
+
+			if (game.AppID != game.PlayableAppID) {
+				Bot.ArchiLogger.LogGenericWarning(string.Format(CultureInfo.CurrentCulture, Strings.WarningIdlingGameMismatch, game.AppID, game.GameName, game.PlayableAppID));
+			}
+
+			await Bot.IdleGame(game).ConfigureAwait(false);
+
+			DateTime startFarmingPeriod = DateTime.UtcNow;
+
+			if (await FarmingResetSemaphore.WaitAsync(4 * 1000).ConfigureAwait(false)) {
+				success = KeepFarming;
+			}
+
+			game.HoursPlayed += (float) DateTime.UtcNow.Subtract(startFarmingPeriod).TotalHours;
+			game.LastTime = DateTime.UtcNow;
+
+			await Bot.ArchiHandler.PlayGames(Array.Empty<uint>()).ConfigureAwait(false);
+
+			CurrentGamesFarming.Clear();
+
+			if (!success) {
+				break;
+			}
+
+			if (await FarmingResetSemaphore.WaitAsync(1 * 1000).ConfigureAwait(false)) {
+				success = KeepFarming;
+			}
+
+			if (!success) {
+				break;
+			}
+		}
+
+		Bot.ArchiLogger.LogGenericInfo(string.Format(CultureInfo.CurrentCulture, Strings.StoppedIdlingList, string.Join(", ", games.Select(static game => game.AppID))));
+
+		return success;
+	}
+
+	private async Task<bool> FarmFast(IReadOnlyCollection<Game> games) {
+		if ((games == null) || (games.Count == 0)) {
+			throw new ArgumentNullException(nameof(games));
+		}
+
+		//Bot.ArchiLogger.LogGenericInfo(string.Format(CultureInfo.CurrentCulture, Strings.NowIdlingList, string.Join(", ", games.Select(static game => game.AppID))));
+
+		bool result = await FarmFastMultiple(games).ConfigureAwait(false);
+
+		if (result) {
+			byte interval = ASF.GlobalConfig?.FarmFastSoloInterval ?? GlobalConfig.DefaultFarmFastSoloInterval;
+			HashSet<Game> gamesToSolo = games.Where(game => game.HoursPlayed >= (ASF.GlobalConfig?.FarmFastSoloHours ?? GlobalConfig.DefaultFarmFastSoloHours) || game.CardsRemaining < Math.Ceiling(game.CardsTotal / 2.0) || (interval > 0 && DateTime.UtcNow.Subtract(game.LastTime).TotalSeconds >= interval * 60)).ToHashSet();
+
+			if (gamesToSolo.Count > 0) {
+				if (await FarmingResetSemaphore.WaitAsync((ASF.GlobalConfig?.FarmFastDelay ?? GlobalConfig.DefaultFarmFastDelay) * 1000).ConfigureAwait(false)) {
+					result = KeepFarming;
+				}
+
+				if (result) {
+					result = await FarmFastSolo(gamesToSolo).ConfigureAwait(false);
+				}
+			}
+		}
+
+		return result;
 	}
 
 	private async Task<bool> FarmCards(Game game) {
@@ -984,6 +1187,7 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 		using IDocument? htmlDocument = await Bot.ArchiWebHandler.GetGameCardsPage(appID).ConfigureAwait(false);
 
 		if (htmlDocument == null) {
+			CanNotGetBadgePage = true;
 			return null;
 		}
 
@@ -1097,8 +1301,8 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 				return null;
 			}
 		}
-
-		return new Game(appID, name, hours, cardsRemaining, badgeLevel);
+		DateTime now = DateTime.UtcNow;
+		return new Game(appID, name, hours, cardsRemaining, badgeLevel, cardsRemaining, now);
 	}
 
 	private async Task<bool?> IsAnythingToFarm() {
@@ -1109,6 +1313,8 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 
 		if (htmlDocument == null) {
 			Bot.ArchiLogger.LogGenericWarning(Strings.WarningCouldNotCheckBadges);
+
+			CanNotGetBadgePage = true;
 
 			if (!Bot.BotConfig.EnableRiskyCardsDiscovery) {
 				return null;
@@ -1137,6 +1343,11 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 
 				return null;
 			}
+		}
+
+		GamesToFarmTemp.Clear();
+		foreach (Game game in GamesToFarm) {
+			GamesToFarmTemp.Add(game);
 		}
 
 		GamesToFarm.Clear();
@@ -1308,6 +1519,7 @@ public sealed class CardsFarmer : IAsyncDisposable, IDisposable {
 		}
 
 		game.PlayableAppID = playableAppID;
+		game.CheckPlayable = true;
 
 		return true;
 	}
