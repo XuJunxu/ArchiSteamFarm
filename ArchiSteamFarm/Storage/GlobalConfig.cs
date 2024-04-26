@@ -150,6 +150,68 @@ public sealed class GlobalConfig {
 
 	private static readonly FrozenSet<string> ForbiddenIPCPasswordPhrases = new HashSet<string>(5, StringComparer.InvariantCultureIgnoreCase) { "ipc", "api", "gui", "asf-ui", "asf-gui" }.ToFrozenSet(StringComparer.InvariantCultureIgnoreCase);
 
+	// 是否启用快速挂卡模式
+	[PublicAPI]
+	public const bool DefaultFarmFastMode = true;
+
+	// 快速挂卡模式从批量挂卡切换到单独挂卡时的等待时长：秒
+	[PublicAPI]
+	public const byte DefaultFarmFastDelay = 10;
+
+	// 快速挂卡模式每次批量挂卡的运行时长：分
+	[PublicAPI]
+	public const byte DefaultFarmFastMultipleMinutes = 5;
+
+	// 快速挂卡模式每次单独挂卡的运行时长：秒
+	[PublicAPI]
+	public const byte DefaultFarmFastSoloSeconds = 4;
+
+	// 快速挂卡模式每次单独挂卡的空闲时长：秒
+	[PublicAPI]
+	public const byte DefaultFarmFastSoloDelay = 1;
+
+	// 快速挂卡模式，若运行时长已超过该时长则总是需要单独挂卡：时
+	[PublicAPI]
+	public const byte DefaultFarmFastSoloHours = 3;
+
+	// 快速挂卡模式，距离上次单独挂卡已超过该时长则此次需要单独挂卡，0表示不判断：分
+	[PublicAPI]
+	public const byte DefaultFarmFastSoloInterval = 15;
+
+	// 所有机器人都关闭后是否保持程序运行
+	[PublicAPI]
+	public const bool DefaultNoBotsKeepRunning = true;
+
+	[JsonInclude]
+	public bool FarmFastMode { get; private init; } = DefaultFarmFastMode;
+
+	[JsonInclude]
+	[Range(1, byte.MaxValue)]
+	public byte FarmFastDelay { get; private init; } = DefaultFarmFastDelay;
+
+	[JsonInclude]
+	[Range(1, byte.MaxValue)]
+	public byte FarmFastMultipleMinutes { get; private init; } = DefaultFarmFastMultipleMinutes;
+
+	[JsonInclude]
+	[Range(1, byte.MaxValue)]
+	public byte FarmFastSoloSeconds { get; private init; } = DefaultFarmFastSoloSeconds;
+
+	[JsonInclude]
+	[Range(1, byte.MaxValue)]
+	public byte FarmFastSoloDelay { get; private init; } = DefaultFarmFastSoloDelay;
+
+	[JsonInclude]
+	[Range(byte.MinValue, byte.MaxValue)]
+	public byte FarmFastSoloHours { get; private init; } = DefaultFarmFastSoloHours;
+
+	[JsonInclude]
+	[Range(byte.MinValue, byte.MaxValue)]
+	public byte FarmFastSoloInterval { get; private init; } = DefaultFarmFastSoloInterval;
+
+	[JsonInclude]
+	public bool NoBotsKeepRunning { get; private init; } = DefaultNoBotsKeepRunning;
+
 	[JsonIgnore]
 	[PublicAPI]
 	public WebProxy? WebProxy {
@@ -468,6 +530,30 @@ public sealed class GlobalConfig {
 
 	[UsedImplicitly]
 	public bool ShouldSerializeWebProxyUsername() => !Saving || (WebProxyUsername != DefaultWebProxyUsername);
+
+	[UsedImplicitly]
+	public bool ShouldSerializeFarmFastMode() => !Saving || (FarmFastMode != DefaultFarmFastMode);
+
+	[UsedImplicitly]
+	public bool ShouldSerializeFarmFastDelay() => !Saving || (FarmFastDelay != DefaultFarmFastDelay);
+
+	[UsedImplicitly]
+	public bool ShouldSerializeFarmFastMultipleMinutes() => !Saving || (FarmFastMultipleMinutes != DefaultFarmFastMultipleMinutes);
+
+	[UsedImplicitly]
+	public bool ShouldSerializeFarmFastSoloSeconds() => !Saving || (FarmFastSoloSeconds != DefaultFarmFastSoloSeconds);
+
+	[UsedImplicitly]
+	public bool ShouldSerializeFarmFastSoloDelay() => !Saving || (FarmFastSoloDelay != DefaultFarmFastSoloDelay);
+
+	[UsedImplicitly]
+	public bool ShouldSerializeFarmFastSoloHours() => !Saving || (FarmFastSoloHours != DefaultFarmFastSoloHours);
+
+	[UsedImplicitly]
+	public bool ShouldSerializeFarmFastSoloInterval() => !Saving || (FarmFastSoloInterval != DefaultFarmFastSoloInterval);
+
+	[UsedImplicitly]
+	public bool ShouldSerializeNoBotsKeepRunning() => !Saving || (NoBotsKeepRunning != DefaultNoBotsKeepRunning);
 
 	internal (bool Valid, string? ErrorMessage) CheckValidation() {
 		if (Blacklist.Contains(0)) {
