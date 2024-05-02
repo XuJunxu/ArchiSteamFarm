@@ -48,7 +48,13 @@ public sealed class Game : IEquatable<Game> {
 
 	internal uint PlayableAppID { get; set; }
 
-	internal Game(uint appID, string gameName, float hoursPlayed, ushort cardsRemaining, byte badgeLevel) {
+	public ushort CardsTotal { get; }
+
+	public DateTime LastTime { get; internal set; }
+
+	public bool CheckPlayable { get; set; }
+
+	internal Game(uint appID, string gameName, float hoursPlayed, ushort cardsRemaining, byte badgeLevel, ushort cardsTotal, DateTime lastTime, bool checkPlayable = false) {
 		ArgumentOutOfRangeException.ThrowIfZero(appID);
 		ArgumentException.ThrowIfNullOrEmpty(gameName);
 		ArgumentOutOfRangeException.ThrowIfNegative(hoursPlayed);
@@ -60,6 +66,10 @@ public sealed class Game : IEquatable<Game> {
 		BadgeLevel = badgeLevel;
 
 		PlayableAppID = appID;
+
+		CardsTotal = cardsTotal;
+		LastTime = lastTime;
+		CheckPlayable = checkPlayable;
 	}
 
 	public bool Equals(Game? other) => (other != null) && (ReferenceEquals(other, this) || ((AppID == other.AppID) && (BadgeLevel == other.BadgeLevel) && (GameName == other.GameName)));
