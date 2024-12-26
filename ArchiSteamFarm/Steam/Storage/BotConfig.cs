@@ -140,9 +140,15 @@ public sealed class BotConfig {
 	[PublicAPI]
 	public static readonly ImmutableHashSet<EAssetType> DefaultTransferableTypes = ImmutableHashSet.Create(EAssetType.BoosterPack, EAssetType.FoilTradingCard, EAssetType.TradingCard);
 
+	[PublicAPI]
+	public const bool DefaultAutoAcceptFriendRequest = false;
+
 	// 快速挂卡中单独挂卡时额外添加的游戏，当只有一个可挂卡游戏时添加两个额外的游戏可加速挂卡
 	[PublicAPI]
 	public static readonly ImmutableList<uint> DefaultGamesFastSoloAdd = [];
+
+	[JsonInclude]
+	public bool AutoAcceptFriendRequest { get; private init; } = DefaultAutoAcceptFriendRequest;
 
 	[JsonDisallowNull]
 	[JsonInclude]
@@ -314,6 +320,9 @@ public sealed class BotConfig {
 
 	[JsonConstructor]
 	internal BotConfig() { }
+
+	[UsedImplicitly]
+	public bool ShouldSerializeAutoAcceptFriendRequest() => !Saving || (AutoAcceptFriendRequest != DefaultAutoAcceptFriendRequest);
 
 	[UsedImplicitly]
 	public bool ShouldSerializeGamesFastSoloAdd() => !Saving || ((GamesFastSoloAdd != DefaultGamesFastSoloAdd) && !GamesFastSoloAdd.SequenceEqual(DefaultGamesFastSoloAdd));

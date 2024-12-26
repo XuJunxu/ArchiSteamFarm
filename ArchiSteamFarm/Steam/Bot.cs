@@ -3001,7 +3001,7 @@ public sealed class Bot : IAsyncDisposable, IDisposable {
 
 					bool acceptFriendRequest = await PluginsCore.OnBotFriendRequest(this, friend.SteamID).ConfigureAwait(false);
 
-					if (acceptFriendRequest) {
+					if (acceptFriendRequest || BotConfig.AutoAcceptFriendRequest) {
 						ArchiLogger.LogInvite(friend.SteamID, true);
 
 						if (!await ArchiHandler.AddFriend(friend.SteamID).ConfigureAwait(false)) {
